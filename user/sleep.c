@@ -1,24 +1,19 @@
-#include "kernel/types.h"      // For data types used in xv6
-#include "kernel/stat.h"       // For file status system calls
-#include "user/user.h"       // For user-level system calls and utility functions
+#include "kernel/types.h"
+#include "user/user.h"
 
 int main(int argc, char *argv[]) {
-    // Check if an argument was provided
     if (argc != 2) {
-        printf(2, "Usage: sleep <number of ticks>\n");
-        exit();
+        printf("Usage: sleep <number of ticks>\n");
+        exit(1);
     }
 
-    // Convert the argument to an integer
     int ticks = atoi(argv[1]);
     if (ticks <= 0) {
-        printf(2, "Invalid number of ticks. Must be a positive integer.\n");
-        exit();
+        printf("Invalid number of ticks. Must be a positive integer.\n");
+        exit(1);
     }
 
-    // Call the sleep system call with the given number of ticks
     sleep(ticks);
-
-    // Exit the program
-    exit();
+    exit(0);
 }
+
