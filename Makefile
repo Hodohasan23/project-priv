@@ -143,8 +143,7 @@ UPROGS=\
 	$U/_sleep\
 	$U/_uptime\
         $U/_pingpong\
-        $U/_my_shell
-
+        $U/_my_shell\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
