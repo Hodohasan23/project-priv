@@ -18,11 +18,6 @@ int getcmd(char *buf, int nbuf) {
     return 0; // Return 0 if reading input was successful
 }
 
-/*
-  This function will execute the command parsed from `buf`.
-  - `buf` contains the command as a string.
-*/
-
 void run_command(char *buf) {
     char *arguments[10]; // Array to store command arguments
     int numargs = 0;
@@ -34,6 +29,10 @@ void run_command(char *buf) {
     char *file_name_l = 0;      // File name for input redirection
     char *file_name_r = 0;      // File name for output redirection
 
+    // Flags to track word start and end
+    int ws = 1;  // Word start flag
+//    int we = 0;  // Word end flag
+
     // Tokenize the input manually using your tokenization approach
     while (*pointer != '\0' && numargs < 10) {
         // Step 1: Skip any leading whitespace
@@ -41,7 +40,13 @@ void run_command(char *buf) {
             pointer++;
         }
 
-        // Detect redirection symbols, but avoid modifying tokenization
+        // If ws flag is set, we’re at the start of a new word
+        if (ws) {
+            ws = 0; // Unset ws flag once we're processing a word
+          //  we = 1; // Set we flag to mark that we're in a word - ;
+        }
+
+        // Detect redirection symbols
         if (*pointer == '>') {
             // Output redirection detected
             redirection_right = 1;
@@ -65,7 +70,7 @@ void run_command(char *buf) {
             }
 
             // Step 3: Find the next space or end of line
-            char *spc = strchr(pointer, ' '); // Use strchr to locate the next space
+            char *spc = strchr(pointer, ' '); // Locate the next space
             char *line = strchr(pointer, '\n');
             
             // Determine which delimiter we hit first
@@ -73,10 +78,12 @@ void run_command(char *buf) {
                 // Null-terminate the current word and move the pointer
                 *spc = '\0';
                 pointer = spc + 1;
+                ws = 1; // Set ws flag for the next word
             } else if (line) {
-                // Handle newline as the delimiter, if it's before the next space
+                // Handle newline as the delimiter, if it’s before the next space
                 *line = '\0';
                 pointer = line + 1;
+                ws = 1; // Set ws flag for the next word
             } else {
                 // No more spaces or newlines, break out of the loop
                 break;
@@ -91,9 +98,9 @@ void run_command(char *buf) {
     }
 
     // Step 4: Check for built-in "exit" command
-    if (strcmp(arguments[0], "exit") == 0) {  // <-- Added
-        exit(0); // Terminate the shell process                     // <-- Added
-    }                                                              // <-- Added
+    if (strcmp(arguments[0], "exit") == 0) {
+        exit(0); // Terminate the shell process
+    }
 
     // Step 5: Check for built-in "cd" command
     if (strcmp(arguments[0], "cd") == 0) {
@@ -116,7 +123,7 @@ void run_command(char *buf) {
     if (pid == 0) {
         // Child process: handle redirection
 
- // Input redirection
+        // Input redirection
         if (redirection_left && file_name_l) {
             int fd = open(file_name_l, O_RDONLY);
             if (fd < 0) {
@@ -131,7 +138,7 @@ void run_command(char *buf) {
             close(fd);      // Close the original file descriptor
         }
 
-       // Output redirection
+        // Output redirection
         if (redirection_right && file_name_r) {
             int fd = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
             if (fd < 0) {
@@ -155,8 +162,6 @@ void run_command(char *buf) {
         wait(0);
     }
 }
-
-
 
 int main(void) {
     static char buf[100]; // Buffer to store the input command
