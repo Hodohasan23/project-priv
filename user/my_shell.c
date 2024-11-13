@@ -23,6 +23,7 @@ void run_command(char *buf, int nbuf, int *pcp) {
     int ws = 1;               // Word start flag
     int redirection_left = 0; // Flag for input redirection
     int redirection_right = 0;// Flag for output redirection
+    int rd_append = 0;        // Created a new flag for appending
     char *file_name_l = 0;    // File name for input redirection
     char *file_name_r = 0;    // File name for output redirection
     int p[2];                 // Pipe array for inter-process communication
@@ -79,38 +80,51 @@ void run_command(char *buf, int nbuf, int *pcp) {
             pointer++;
         }
 
-        // Input redirection '<'
-        if (*pointer == '<') {
-            redirection_left = 1;
-            pointer++;
-            while (*pointer == ' ') pointer++;
-            file_name_l = pointer;
-            while (*pointer != ' ' && *pointer != '\0') pointer++;
-            *pointer++ = '\0';
-            continue;
-        }
-
-        // Output redirection '>'
-        if (*pointer == '>') {
+        // Performs a special check for (>>)  
+        if (*pointer == '>' && *(pointer + 1) == '>') {
             redirection_right = 1;
-            pointer++;
-            while (*pointer == ' ') pointer++;
+            rd_append = 1; // Append set for redirection
+            pointer += 2;
+            while (*pointer == ' ') pointer++; // After >> spaces are skipped
             file_name_r = pointer;
             while (*pointer != ' ' && *pointer != '\0') pointer++;
             *pointer++ = '\0';
             continue;
         }
 
-        // Add arguments if a word is found
+        // Output redirection (>) check
+        if (*pointer == '>') {
+            redirection_right = 1;
+            rd_append = 0; // Overwrites for append
+            pointer++;
+            while (*pointer == ' ') pointer++; // After > spaces are skipped 
+            file_name_r = pointer;
+            while (*pointer != ' ' && *pointer != '\0') pointer++;
+            *pointer++ = '\0';
+            continue;
+        }
+
+        // Input redirection (<) check
+        if (*pointer == '<') {
+            redirection_left = 1;
+            pointer++;
+            while (*pointer == ' ') pointer++; // Skip spaces after <
+            file_name_l = pointer;
+            while (*pointer != ' ' && *pointer != '\0') pointer++;
+            *pointer++ = '\0';
+            continue;
+        }
+
+        // Checks if its a word to add arguments
         if (ws) {
-            arguments[numargs++] = pointer;
+            arguments[numargs++] = pointer; // Beginning of the word
             ws = 0;
         }
 
-        // Advance to the next whitespace or end of line to end the current word
+        // Move to the next whitespace or end of line to end the current word
         char *spc = strchr(pointer, ' ');
         char *line = strchr(pointer, '\n');
-
+        
         if (spc && (!line || spc < line)) {
             *spc = '\0';
             pointer = spc + 1;
@@ -123,50 +137,68 @@ void run_command(char *buf, int nbuf, int *pcp) {
             break;
         }
     }
-    arguments[numargs] = 0; // Null-terminate the arguments array
+    arguments[numargs] = 0; // Arguments array is null terminated
 
-    // Step 1: Check if command is "cd" and execute in parent process
+    // If command is "cd" its executed in parent proccess 
     if (strcmp(arguments[0], "cd") == 0) {
         if (numargs < 2) {
-            fprintf(2, "cd: missing argument\n");
-            exit(0); // Exit without forking if "cd" failed
+            fprintf(2, "cd: Path argument is required\n");
+            exit(0); 
         }
         if (chdir(arguments[1]) < 0) {
-            fprintf(2, "cd: cannot change directory to %s\n", arguments[1]);
+            fprintf(2, "cd error: failed to change directory to %s\n", arguments[1]);
         }
-        exit(0); // Exit after handling "cd" in parent
+        exit(0); 
     }
 
-    // Step 2: Handle input redirection if specified
+    // Input redirection handling
     if (redirection_left) {
-        int fd = open(file_name_l, O_RDONLY);
-        if (fd < 0) {
-            fprintf(2, "Error: cannot open input file %s\n", file_name_l);
+        int f_descriptor = open(file_name_l, O_RDONLY);
+        if (f_descriptor < 0) {
+            fprintf(2, "Error: there is an issue opening input file %s\n", file_name_l);
             exit(1);
         }
         close(0);
-        dup(fd);
-        close(fd);
+        dup(f_descriptor);
+        close(f_descriptor);
     }
 
-    // Step 3: Handle output redirection if specified
+    // Handles append or output redirection 
     if (redirection_right) {
-        int fd = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
-        if (fd < 0) {
-            fprintf(2, "Error: cannot open output file %s\n", file_name_r);
+        int f_descriptor = open(file_name_r, O_WRONLY | O_CREATE);
+        if (f_descriptor < 0) {
+            fprintf(2, "Error: there is an issue opening output file %s\n", file_name_r);
             exit(1);
         }
+
+        if (rd_append) {
+            // Append simulated by moving to EOF manually
+            char buffer[1];
+            while (read(f_descriptor, buffer, 1) > 0) {
+                // Ensures that everything is read until EOF
+            }
+        } else {
+            // Overwrite mode: File is truncated
+            close(f_descriptor); // File that has just been opened is closed without truncation
+            f_descriptor = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
+            if (f_descriptor < 0) {
+                fprintf(2, "Error: cannot open output file %s\n", file_name_r);
+                exit(1);
+            }
+        }
+
         close(1);
-        dup(fd);
-        close(fd);
+        dup(f_descriptor);
+        close(f_descriptor);
     }
 
-    // Step 4: Fork and execute other commands
-    int pid = fork();
-    if (pid < 0) {
-        fprintf(2, "Error: fork failed\n");
+
+    // This executes other commands and forks
+    int process_id = fork();
+    if (process_id < 0) {
+        fprintf(2, "Error: Failure with fork\n");
         exit(1);
-    } else if (pid == 0) {
+    } else if (process_id == 0) {
         exec(arguments[0], arguments);
         fprintf(2, "Error: command not found: %s\n", arguments[0]);
         exit(1);
