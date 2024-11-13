@@ -8,8 +8,8 @@ int getcmd(char *buf, int nbuf) {
     memset(buf, 0, nbuf);
 
     int r = read(0, buf, nbuf);
-    if (r <= 0) return -1; // End of input or error
-    buf[r - 1] = '\0'; // Replace newline with null terminator
+    if (r <= 0) return -1; // Error or end of input
+    buf[r - 1] = '\0'; // Null terminator replaces new line
     return 0;
 }
 
@@ -32,51 +32,51 @@ void run_command(char *buf, int nbuf, int *pcp) {
     
     int p[2];                 
     int pipe_cmd = 0;         
-    char *left_command = buf; // For storing the left side of a pipe command
-    char *right_command = 0; // For storing the right side of a pipe command
+    char *lPipe = buf; // For storing the left side of a pipe command
+    char *rPipe = 0; // For storing the right side of a pipe command
    
 
     char *pointer = buf;
 
-    // Detect if a pipe character ('|') exists in the command
+    // Pipe ('|') check
     while (*pointer != '\0') {
         if (*pointer == '|') {
-            pipe_cmd = 1;            // Set the pipe flag
-            *pointer = '\0';         // Null-terminate the left command
-            right_command = pointer + 1; // Start of the right command
+            pipe_cmd = 1;            
+            *pointer = '\0';         // Left side of the pipe is terminated
+            rPipe = pointer + 1; // Right side of pipe start
             break;
         }
         pointer++;
     }
 
-    // If there's a pipe, set up the pipe handling
+    // Pipe handling set-up
     if (pipe_cmd) {
-        pipe(p); // Create a pipe: p[0] is read end, p[1] is write end
+        pipe(p); 
 
-        // First child process to handle the left command (write to pipe)
+        // Child process to write to pipe
         if (fork() == 0) {
-            close(1);       // Close stdout
-            dup(p[1]);      // Duplicate write end of the pipe to stdout
-            close(p[0]);    // Close unused read end of the pipe
-            close(p[1]);    // Close the original write end
-            run_command(left_command, nbuf, pcp); // Execute the left command
+            close(1);       
+            dup(p[1]);      
+            close(p[0]);    
+            close(p[1]);    
+            run_command(lPipe, nbuf, pcp); // Left pipe is executed
         }
 
-        // Second child process to handle the right command (read from pipe)
+        // Child process to read from pipe
         if (fork() == 0) {
-            close(0);       // Close stdin
-            dup(p[0]);      // Duplicate read end of the pipe to stdin
-            close(p[1]);    // Close unused write end of the pipe
-            close(p[0]);    // Close the original read end
-            run_command(right_command, nbuf, pcp); // Execute the right command
+            close(0);
+            dup(p[0]);      
+            close(p[1]);    
+            close(p[0]);    
+            run_command(rPipe, nbuf, pcp); // Right pipe is executed
         }
 
-        // Parent process closes both ends of the pipe and waits for children
-        close(p[0]); // Close read end in the parent
-        close(p[1]); // Close write end in the parent
-        wait(0);     // Wait for the left command child to finish
-        wait(0);     // Wait for the right command child to finish
-        exit(0);     // Exit after handling the pipe
+        // Both ends of the pipes are closed by parent and waits for children
+        close(p[0]); 
+        close(p[1]); 
+        wait(0);     
+        wait(0);     
+        exit(0);     
     }
 
     // Tokenize input for non-pipe commands, checking for redirection symbols
@@ -216,6 +216,9 @@ void run_command(char *buf, int nbuf, int *pcp) {
 
 int main(void) {
     static char buf[100];
+    
+    int pcp[2];
+    pipe(pcp); 
 
     // Main loop to read and execute commands
     while (getcmd(buf, sizeof(buf)) >= 0) {
@@ -231,7 +234,7 @@ int main(void) {
         
         // A child is forked to handle non-cd commands
         if (fork() == 0) {
-            run_command(buf, 100, 0);
+            run_command(buf, 100, pcp);
         }
         wait(0); 
     }
