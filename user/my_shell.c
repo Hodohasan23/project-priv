@@ -14,22 +14,28 @@ int getcmd(char *buf, int nbuf) {
 }
 
 /*
-  Recursive function that parses the command in *buf and executes it.
+  Recursive function which parses the command in *buf and executes it.
 */
 __attribute__((noreturn))
 void run_command(char *buf, int nbuf, int *pcp) {
     char *arguments[10];
     int numargs = 0;
-    int ws = 1;               // Word start flag
-    int redirection_left = 0; // Flag for input redirection
-    int redirection_right = 0;// Flag for output redirection
-    int rd_append = 0;        // Created a new flag for appending
-    char *file_name_l = 0;    // File name for input redirection
-    char *file_name_r = 0;    // File name for output redirection
-    int p[2];                 // Pipe array for inter-process communication
-    int pipe_cmd = 0;         // Pipe command flag
+
+    /* Word start/end */
+    int ws = 1;
+              
+    int redirection_left = 0; 
+    int redirection_right = 0;
+    int rd_append = 0; // Created a new flag for appending
+    char *file_name_l = 0;    
+    char *file_name_r = 0;
+    
+    int p[2];                 
+    int pipe_cmd = 0;         
     char *left_command = buf; // For storing the left side of a pipe command
-    char *right_command = 0;  // For storing the right side of a pipe command
+    char *right_command = 0; // For storing the right side of a pipe command
+   
+
     char *pointer = buf;
 
     // Detect if a pipe character ('|') exists in the command
@@ -80,7 +86,7 @@ void run_command(char *buf, int nbuf, int *pcp) {
             pointer++;
         }
 
-        // Performs a special check for (>>)  
+        // Performs a special check for (>>)
         if (*pointer == '>' && *(pointer + 1) == '>') {
             redirection_right = 1;
             rd_append = 1; // Append set for redirection
@@ -213,21 +219,21 @@ int main(void) {
 
     // Main loop to read and execute commands
     while (getcmd(buf, sizeof(buf)) >= 0) {
-        // Check if the command starts with "cd " using manual comparison
+        // Using manual comparison check if the command entered starts with 'cd'
         if (buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' ') {
-            // Skip "cd " and get the directory path
-            char *cd_command = buf + 3; // Pointer to the directory argument
-            if (chdir(cd_command) < 0) {
-                fprintf(2, "cd: cannot change directory to %s\n", cd_command);
+            // 'cd' is skipped and directory path is retrieved
+            char *cd_pntr = buf + 3; // Pointer
+            if (chdir(cd_pntr) < 0) {
+                fprintf(2, "cd error: failed to change directory to %s\n", cd_pntr);
             }
-            continue; // Skip the fork if "cd" was handled
+            continue;
         }
         
-        // For non-cd commands, fork a child to handle them
+        // A child is forked to handle non-cd commands
         if (fork() == 0) {
             run_command(buf, 100, 0);
         }
-        wait(0); // Wait for the command to finish
+        wait(0); 
     }
 
     exit(0);
