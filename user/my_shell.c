@@ -25,14 +25,15 @@ void run_command(char *buf, int nbuf, int *pcp) {
 
     int redirection_left = 0;
     int redirection_right = 0;
+    int rd_append = 0; // Flag for appending
     char *file_name_l = 0;
     char *file_name_r = 0;
 
     int pipe_cmd = 0;
     int sequence_cmd = 0;
-    char *lPipe = buf;
-    char *rPipe = 0;
-    char *nc = 0;
+    char *lPipe = buf; //Left side of pipe
+    char *rPipe = 0;   //Right side of pipe
+    char *nc = 0; // Used for new command
 
     char *pointer = buf;
 
@@ -51,7 +52,8 @@ void run_command(char *buf, int nbuf, int *pcp) {
         }
         pointer++;
     }
-//reference source:https://www.youtube.com/watch?v=ubt-UjcQUYg&t=1430s
+     //Reference source where I learnt to duplicate and close pipes: https://www.youtube.com/watch?v=ubt-UjcQUYg&t=1430s
+
     // Handle piping
     if (pipe_cmd) {
         int p[2];
@@ -104,9 +106,21 @@ void run_command(char *buf, int nbuf, int *pcp) {
 
     // Handle redirection operators and remove them from arguments
     for (int i = 0; i < numargs; i++) {
-        // Output redirection ">"
-        if (strcmp(arguments[i], ">") == 0 && arguments[i + 1] != 0) {
+        // Append redirection ">>"
+        if (strcmp(arguments[i], ">>") == 0 && arguments[i + 1] != 0) {
             redirection_right = 1;
+            rd_append = 1;
+            file_name_r = arguments[i + 1];
+            for (int j = i; arguments[j] != 0; j++) {
+                arguments[j] = arguments[j + 2];
+            }
+            i--;
+            numargs -= 2;
+        }
+        // Output redirection ">"
+        else if (strcmp(arguments[i], ">") == 0 && arguments[i + 1] != 0) {
+            redirection_right = 1;
+            rd_append = 0;
             file_name_r = arguments[i + 1];
             for (int j = i; arguments[j] != 0; j++) {
                 arguments[j] = arguments[j + 2];
@@ -152,11 +166,25 @@ void run_command(char *buf, int nbuf, int *pcp) {
 
     // Handle output redirection
     if (redirection_right && file_name_r) {
-        int descriptor_out = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
+        int descriptor_out = open(file_name_r, O_WRONLY | O_CREATE);
         if (descriptor_out < 0) {
             fprintf(2, "Error: cannot open output file %s\n", file_name_r);
             exit(1);
         }
+
+        if (rd_append) {
+            // Simulate append by moving to end of file
+            char buffer[1];
+            while (read(descriptor_out, buffer, 1) > 0);
+        } else {
+            close(descriptor_out); // Close initial descriptor without truncation
+            descriptor_out = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
+            if (descriptor_out < 0) {
+                fprintf(2, "Error: cannot open output file %s\n", file_name_r);
+                exit(1);
+            }
+        }
+
         close(1);
         dup(descriptor_out);
         close(descriptor_out);
@@ -205,13 +233,13 @@ int main(void) {
           a CD command and run it if required.
          */
         int child_status;
-        wait(&child_status);  // Wait for the child process to finish and capture its status
+        wait(&child_status);  
 
-        if (child_status == 2) {  // Status 2 indicates a `cd` command
+        if (child_status == 2) {  
             // Directory name read from pipe
             char name[100];
             if (read(pcp[0], name, sizeof(name)) > 0) {
-                // Attemp to change directory 
+                // Attempt to change directory 
                 if (chdir(name) < 0) {
                     fprintf(2, "cd error: failed to change directory to %s\n", name);
                 }
