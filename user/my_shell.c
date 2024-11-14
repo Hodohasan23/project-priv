@@ -23,60 +23,77 @@ void run_command(char *buf, int nbuf, int *pcp) {
 
     /* Word start/end */
     int ws = 1;
-              
-    int redirection_left = 0; 
+
+    int redirection_left = 0;
     int redirection_right = 0;
-    int rd_append = 0; // Created a new flag for appending
-    char *file_name_l = 0;    
+    int rd_append = 0; // Flag for appending
+    char *file_name_l = 0;
     char *file_name_r = 0;
-    
-    int p[2];                 
-    int pipe_cmd = 0;         
-    char *lPipe = buf; // For storing the left side of a pipe command
-    char *rPipe = 0; // For storing the right side of a pipe command
-   
+
+    int p[2];
+    int pipe_cmd = 0;
+    int sequence_cmd = 0; // Flag for sequential commands
+    char *lPipe = buf;    // Left side of a pipe command
+    char *rPipe = 0;      // Right side of a pipe command
+    char *next_command = 0; // Next command after `;`
 
     char *pointer = buf;
 
-    // Pipe ('|') check
-    while (*pointer != '\0') {
+    // Check for `;` or `|`
+    for (int i = 0; i < nbuf && *pointer != '\0'; i++) {
         if (*pointer == '|') {
-            pipe_cmd = 1;            
-            *pointer = '\0';         // Left side of the pipe is terminated
-            rPipe = pointer + 1; // Right side of pipe start
+            pipe_cmd = 1;
+            *pointer = '\0';       // Null-terminate left side of the pipe
+            rPipe = pointer + 1;   // Start of right side of pipe
+            break;
+        } else if (*pointer == ';') {
+            sequence_cmd = 1;
+            *pointer = '\0';       // Null-terminate the current command
+            next_command = pointer + 1; // Start of the next command
             break;
         }
         pointer++;
     }
 
-    // Pipe handling set-up
+    // Handle piping
     if (pipe_cmd) {
-        pipe(p); 
+        pipe(p);
 
-        // Child process to write to pipe
+        // First child process to write to pipe
         if (fork() == 0) {
-            close(1);       
-            dup(p[1]);      
-            close(p[0]);    
-            close(p[1]);    
-            run_command(lPipe, nbuf, pcp); // Left pipe is executed
+            close(1);       // Redirect stdout to pipe
+            dup(p[1]);
+            close(p[0]);    // Close unused read end
+            close(p[1]);    // Close original write end
+            run_command(lPipe, nbuf, pcp); // Execute left command
         }
 
-        // Child process to read from pipe
+        // Second child process to read from pipe
         if (fork() == 0) {
-            close(0);
-            dup(p[0]);      
-            close(p[1]);    
-            close(p[0]);    
-            run_command(rPipe, nbuf, pcp); // Right pipe is executed
+            close(0);       // Redirect stdin to pipe
+            dup(p[0]);
+            close(p[1]);    // Close unused write end
+            close(p[0]);    // Close original read end
+            run_command(rPipe, nbuf, pcp); // Execute right command
         }
 
-        // Both ends of the pipes are closed by parent and waits for children
-        close(p[0]); 
-        close(p[1]); 
-        wait(0);     
-        wait(0);     
-        exit(0);     
+        // Parent closes both ends and waits for children
+        close(p[0]);
+        close(p[1]);
+        wait(0);
+        wait(0);
+        exit(0);
+    }
+
+    // Handle sequential commands
+    if (sequence_cmd) {
+        if (fork() == 0) {
+            // Execute the current command
+            run_command(buf, nbuf, pcp);
+        }
+        wait(0); // Wait for the current command to finish
+        run_command(next_command, nbuf, pcp); // Recursively execute next command
+        exit(0); // Exit after executing the sequence
     }
 
     // Tokenize input for non-pipe commands, checking for redirection symbols
@@ -86,51 +103,51 @@ void run_command(char *buf, int nbuf, int *pcp) {
             pointer++;
         }
 
-        // Performs a special check for (>>)
+        // Output redirection (>>)
         if (*pointer == '>' && *(pointer + 1) == '>') {
             redirection_right = 1;
-            rd_append = 1; // Append set for redirection
+            rd_append = 1;
             pointer += 2;
-            while (*pointer == ' ') pointer++; // After >> spaces are skipped
+            while (*pointer == ' ') pointer++;
             file_name_r = pointer;
             while (*pointer != ' ' && *pointer != '\0') pointer++;
             *pointer++ = '\0';
             continue;
         }
 
-        // Output redirection (>) check
+        // Output redirection (>)
         if (*pointer == '>') {
             redirection_right = 1;
-            rd_append = 0; // Overwrites for append
+            rd_append = 0;
             pointer++;
-            while (*pointer == ' ') pointer++; // After > spaces are skipped 
+            while (*pointer == ' ') pointer++;
             file_name_r = pointer;
             while (*pointer != ' ' && *pointer != '\0') pointer++;
             *pointer++ = '\0';
             continue;
         }
 
-        // Input redirection (<) check
+        // Input redirection (<)
         if (*pointer == '<') {
             redirection_left = 1;
             pointer++;
-            while (*pointer == ' ') pointer++; // Skip spaces after <
+            while (*pointer == ' ') pointer++;
             file_name_l = pointer;
             while (*pointer != ' ' && *pointer != '\0') pointer++;
             *pointer++ = '\0';
             continue;
         }
 
-        // Checks if its a word to add arguments
+        // Add argument if word is found
         if (ws) {
-            arguments[numargs++] = pointer; // Beginning of the word
+            arguments[numargs++] = pointer;
             ws = 0;
         }
 
-        // Move to the next whitespace or end of line to end the current word
+        // Find end of word
         char *spc = strchr(pointer, ' ');
         char *line = strchr(pointer, '\n');
-        
+
         if (spc && (!line || spc < line)) {
             *spc = '\0';
             pointer = spc + 1;
@@ -143,25 +160,25 @@ void run_command(char *buf, int nbuf, int *pcp) {
             break;
         }
     }
-    arguments[numargs] = 0; // Arguments array is null terminated
+    arguments[numargs] = 0;
 
-    // If command is "cd" its executed in parent proccess 
+    // Handle `cd` command in parent process
     if (strcmp(arguments[0], "cd") == 0) {
         if (numargs < 2) {
             fprintf(2, "cd: Path argument is required\n");
-            exit(0); 
+            exit(0);
         }
         if (chdir(arguments[1]) < 0) {
             fprintf(2, "cd error: failed to change directory to %s\n", arguments[1]);
         }
-        exit(0); 
+        exit(0);
     }
 
-    // Input redirection handling
+    // Handle input redirection
     if (redirection_left) {
         int f_descriptor = open(file_name_l, O_RDONLY);
         if (f_descriptor < 0) {
-            fprintf(2, "Error: there is an issue opening input file %s\n", file_name_l);
+            fprintf(2, "Error: cannot open input file %s\n", file_name_l);
             exit(1);
         }
         close(0);
@@ -169,23 +186,20 @@ void run_command(char *buf, int nbuf, int *pcp) {
         close(f_descriptor);
     }
 
-    // Handles append or output redirection 
+    // Handle output redirection
     if (redirection_right) {
         int f_descriptor = open(file_name_r, O_WRONLY | O_CREATE);
         if (f_descriptor < 0) {
-            fprintf(2, "Error: there is an issue opening output file %s\n", file_name_r);
+            fprintf(2, "Error: cannot open output file %s\n", file_name_r);
             exit(1);
         }
 
         if (rd_append) {
-            // Append simulated by moving to EOF manually
+            // Simulate append by moving to end of file
             char buffer[1];
-            while (read(f_descriptor, buffer, 1) > 0) {
-                // Ensures that everything is read until EOF
-            }
+            while (read(f_descriptor, buffer, 1) > 0);
         } else {
-            // Overwrite mode: File is truncated
-            close(f_descriptor); // File that has just been opened is closed without truncation
+            close(f_descriptor);
             f_descriptor = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
             if (f_descriptor < 0) {
                 fprintf(2, "Error: cannot open output file %s\n", file_name_r);
@@ -198,8 +212,7 @@ void run_command(char *buf, int nbuf, int *pcp) {
         close(f_descriptor);
     }
 
-
-    // This executes other commands and forks
+    // Fork and execute other commands
     int process_id = fork();
     if (process_id < 0) {
         fprintf(2, "Error: Failure with fork\n");
@@ -209,7 +222,7 @@ void run_command(char *buf, int nbuf, int *pcp) {
         fprintf(2, "Error: command not found: %s\n", arguments[0]);
         exit(1);
     } else {
-        wait(0); // Parent waits for child process to complete
+        wait(0);
     }
     exit(0);
 }
@@ -218,25 +231,23 @@ int main(void) {
     static char buf[100];
     
     int pcp[2];
-    pipe(pcp); 
+    pipe(pcp);
 
     // Main loop to read and execute commands
     while (getcmd(buf, sizeof(buf)) >= 0) {
-        // Using manual comparison check if the command entered starts with 'cd'
         if (buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' ') {
-            // 'cd' is skipped and directory path is retrieved
-            char *cd_pntr = buf + 3; // Pointer
+            char *cd_pntr = buf + 3;
             if (chdir(cd_pntr) < 0) {
                 fprintf(2, "cd error: failed to change directory to %s\n", cd_pntr);
             }
             continue;
         }
         
-        // A child is forked to handle non-cd commands
+        // Fork a child for non-cd commands
         if (fork() == 0) {
             run_command(buf, 100, pcp);
         }
-        wait(0); 
+        wait(0);
     }
 
     exit(0);
