@@ -23,7 +23,6 @@ void run_command(char *buf, int nbuf, int *pcp) {
     char *arguments[MAX];
     int numargs = 0;
 
-
     int redirection_left = 0;
     int redirection_right = 0;
     char *file_name_l = 0;
@@ -52,7 +51,7 @@ void run_command(char *buf, int nbuf, int *pcp) {
         }
         pointer++;
     }
-
+//reference source:https://www.youtube.com/watch?v=ubt-UjcQUYg&t=1430s
     // Handle piping
     if (pipe_cmd) {
         int p[2];
@@ -141,28 +140,29 @@ void run_command(char *buf, int nbuf, int *pcp) {
 
     // Handle input redirection
     if (redirection_left && file_name_l) {
-        int fd_in = open(file_name_l, O_RDONLY);
-        if (fd_in < 0) {
+        int descriptor_in = open(file_name_l, O_RDONLY);
+        if (descriptor_in < 0) {
             fprintf(2, "Error: cannot open input file %s\n", file_name_l);
             exit(1);
         }
         close(0);
-        dup(fd_in);
-        close(fd_in);
+        dup(descriptor_in);
+        close(descriptor_in);
     }
 
     // Handle output redirection
     if (redirection_right && file_name_r) {
-        int fd_out = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
-        if (fd_out < 0) {
+        int descriptor_out = open(file_name_r, O_WRONLY | O_CREATE | O_TRUNC);
+        if (descriptor_out < 0) {
             fprintf(2, "Error: cannot open output file %s\n", file_name_r);
             exit(1);
         }
         close(1);
-        dup(fd_out);
-        close(fd_out);
+        dup(descriptor_out);
+        close(descriptor_out);
     }
-// Fork and execute other commands
+
+    // Fork and execute other commands
     int process_id = fork();
     if (process_id < 0) {
         fprintf(2, "Error: Failure with fork\n");
@@ -178,25 +178,45 @@ void run_command(char *buf, int nbuf, int *pcp) {
 }
 
 int main(void) {
+
     static char buf[100];
     int pcp[2];
     pipe(pcp);
 
-    // Main loop to read and execute commands
+    /* Read and run input commands. */
     while (getcmd(buf, sizeof(buf)) >= 0) {
+        
+        // Check for "cd" command specifically in main
         if (buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' ') {
-            char *cd_pntr = buf + 3;
-            if (chdir(cd_pntr) < 0) {
-                fprintf(2, "cd error: failed to change directory to %s\n", cd_pntr);
+            char *cd_path = buf + 3; 
+            if (chdir(cd_path) < 0) {
+                fprintf(2, "cd error: failed to change directory to %s\n", cd_path);
             }
-            continue;
+            continue; 
         }
 
-        // Fork a child for non-cd commands
+        
         if (fork() == 0) {
             run_command(buf, 100, pcp);
         }
-        wait(0);
+
+        /*
+          Check if run_command found this is
+          a CD command and run it if required.
+         */
+        int child_status;
+        wait(&child_status);  // Wait for the child process to finish and capture its status
+
+        if (child_status == 2) {  // Status 2 indicates a `cd` command
+            // Directory name read from pipe
+            char name[100];
+            if (read(pcp[0], name, sizeof(name)) > 0) {
+                // Attemp to change directory 
+                if (chdir(name) < 0) {
+                    fprintf(2, "cd error: failed to change directory to %s\n", name);
+                }
+            }
+        }
     }
     exit(0);
 }
